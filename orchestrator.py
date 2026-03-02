@@ -433,7 +433,7 @@ class ClaudeClient:
                     max_tokens=max_tokens,
                     system=system,
                     messages=messages,
-                    betas=['prompt-caching-2024-07-31'],
+                    extra_headers={'anthropic-beta': 'prompt-caching-2024-07-31'},
                 )
                 self.tracker.record(
                     model=model,
