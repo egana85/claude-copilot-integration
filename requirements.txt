@@ -1,0 +1,17 @@
+# requirements.txt — Claude + Copilot Integration
+# Instalación: pip install -r requirements.txt
+
+# --- CORE ---
+anthropic>=0.40.0          # SDK oficial Anthropic (claude-opus, haiku)
+redis[hiredis]>=5.0.0      # Cache del system prompt (opcional pero recomendado)
+
+# --- RUNTIME (si se usa FastAPI) ---
+# fastapi>=0.115.0
+# uvicorn[standard]>=0.30.0
+# sqlalchemy[asyncio]>=2.0.0
+# asyncpg>=0.29.0           # driver async PostgreSQL
+# celery[redis]>=5.4.0
+
+# --- DEV / CI ---
+# watchdog>=4.0.0           # FileWatcher (Fase 4, opcional)
+python-dotenv>=1.0.0        # cargar .env en local
