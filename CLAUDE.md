@@ -69,7 +69,7 @@ python ide_injector.py restore --file app/service.py
 | Variable | Default | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | **Required** |
-| `DESIGN_MODEL` | `claude-opus-4-5` | Model for design phase |
+| `DESIGN_MODEL` | `claude-opus-4-6` | Model for design phase |
 | `REVIEW_MODEL` | `claude-haiku-4-5-20251001` | Model for review phase |
 | `MAX_TOKENS_DESIGN` | `1500` | Token cap for design responses |
 | `MAX_TOKENS_REVIEW` | `800` | Token cap for review responses |
@@ -84,15 +84,23 @@ python ide_injector.py restore --file app/service.py
 - **`orchestrator.py`** — Main entry point. Contains `OrchestratorConfig`, `ClaudeClient`, `SystemPromptCache`, `TokenTracker`, `DiffExtractor`, and a simplified `IDEInjector`. All async internals, synchronous Anthropic SDK calls.
 - **`ide_injector.py`** — Full-featured injector with backup management, 6 injection modes (`APPEND`, `PREPEND`, `REPLACE`, `AT_LINE`, `AFTER_CLASS`, `AFTER_FUNC`), `BatchInjector`, and `FileWatcher`.
 - **`bootstrap.py`** — Environment validation only; runs 7 checks and exits with code 1 if critical checks fail.
+- **`.github/workflows/claude-review.yml`** — GitHub Actions workflow. Triggers on every PR, runs Claude review, posts a comment, and **fails the check if any `critical` issue is found** (blocks merge).
+- **`metrics_exporter.py`** — Exports token metrics to Datadog (StatsD UDP) and Grafana (Prometheus Pushgateway). No external SDK required.
 - **`system_prompt.txt`** — Project-specific system prompt (must be created; not in repo). Should contain STACK, AL DISEÑAR, AL REVISAR, and severity format sections.
 
 ### Key design decisions
 - **Output contract**: JSON goes to stdout; all logs go to stderr. Critical for GitHub Actions pipelines.
-- **System prompt caching**: Cache-aside pattern with SHA256 hash as key. Redis preferred, falls back to in-memory dict. Reduces input tokens ~40%.
+- **Prompt caching**: Uses Anthropic's native `cache_control: ephemeral` on the system prompt via `extra_headers={'anthropic-beta': 'prompt-caching-2024-07-31'}`. Reduces system prompt tokens ~90%. Redis/in-memory cache is still used as a local read-optimization before the API call.
 - **Token KPI**: `TokenTracker.KPI_LIMIT = 1500` tokens/feature. Logs a warning when exceeded.
 - **Diff filtering**: `DiffExtractor.filter_files()` keeps only `.py`/`.ts`/`.js`, skips migrations, node_modules, lock files, and binaries. Reduces input tokens ~70%.
-- **Chunked review**: Diffs >3000 chars are split into 3000-char chunks, reviewed separately, then merged and capped at 10 issues sorted by severity.
-- **Batch review**: `review-batch` groups up to 3 diffs or 4000 chars per API call to reduce per-request overhead.
+- **Chunked review**: Diffs >3000 chars are split into 3000-char chunks and reviewed **in parallel** with `asyncio.gather()`, then merged and capped at 10 issues sorted by severity.
+- **Batch review**: `review-batch` groups up to 3 diffs or 4000 chars per API call. All groups are dispatched **in parallel**.
 - **Retry**: `ClaudeClient` retries `RateLimitError` up to 3 times with exponential backoff (1s, 2s, 4s).
 - **Pseudocode markers**: Injected blocks are delimited by `# --- @claude:start {tag} ---` / `# --- @claude:end {tag} ---` for identification and replacement.
 - **Metrics export**: Pass `--export-metrics` to any orchestrator command to write token data to `/tmp/token_metrics.json` (Grafana-compatible format).
+- **PR comment upsert**: The workflow updates an existing Claude comment instead of creating a new one on each push, preventing comment spam.
+- **Critical enforcement**: The workflow step `Enforce critical issues` calls `exit 1` if `critical_count > 0`, blocking merge until resolved.
+
+### GitHub repo
+- **Remote**: `https://github.com/egana85/claude-copilot-integration`
+- **Secret required**: `ANTHROPIC_API_KEY` must be set in repo Settings → Secrets → Actions.
